@@ -95,17 +95,14 @@ async function main() {
         }
 
         const [p, ext] = path.split(".");
-        const newFilePath = `${p}_[-]${name}[-].${ext}`;
+        const newFilePath = `${p}[-]${name}[-].${ext}`;
         await sourceFile.copyImmediately(newFilePath, { overwrite: true });
-        functions[name] = newFilePath;
 
         logger.log(names);
 
         project.removeSourceFile(sourceFile);
 
         bundleResult.value.push(await bundleFunction(name, newFilePath, bundlerConfig));
-
-        // bundleSingleCodeFunction(name, path, bundlerConfig);
     }
 
     // const bundleResult = await bundleFunctions(fxWithResolvedPaths, bundlerConfig);
