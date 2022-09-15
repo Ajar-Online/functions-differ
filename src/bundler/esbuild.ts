@@ -47,3 +47,20 @@ export async function bundleFunction(
 
     return { fxName, fxPath, code: buildResult.outputFiles[0].text };
 }
+
+// export function bundleSingleCodeFunction(functionName: string, path: string, bundlerConfig?: BuildOptions): any {
+// project.addSourceFilesAtPaths("**/*.ts");
+//     logger.log(functionName, path, bundlerConfig);
+
+//     const typeChecker = project.getTypeChecker();
+//     const indexFile = project.getSourceFileOrThrow(path);
+
+//     const exportSymbols = typeChecker.getExportsOfModule(indexFile.getSymbolOrThrow());
+//     const names = exportSymbols.map((e) => e.getEscapedName());
+
+//     logger.log(names);
+
+//     return 1;
+// }
+
+// const project = new Project();

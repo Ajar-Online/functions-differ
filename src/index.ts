@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 
 import chalk from "chalk";
-import { bundleFunctions } from "./bundler";
-import { BundlerConfig } from "./bundler/esbuild";
+import fs from "fs";
+import path from "path";
+import { Project } from "ts-morph";
+import { BundleResult } from "./bundler/bundleResult";
+import { bundleFunction, BundlerConfig } from "./bundler/esbuild";
 import hashesDiffer from "./differ/differ";
 import { getFirebaseFunctionsAndPaths } from "./discoverer/discoverer";
 import calculateHash from "./hasher/hasher";
@@ -10,14 +13,13 @@ import segregate from "./hasher/segregate";
 import logger from "./logger";
 import {
     bundlerConfigFilePath,
-    concurrency,
     dir,
+    discover,
+    indexFilePath,
     prefix,
     separator,
     specFilePath,
     write,
-    discover,
-    indexFilePath,
 } from "./options/options";
 import DifferSpec from "./parser/differSpec";
 import parseSpecFile, { parseBundlerConfigFile, resolveFunctionPaths } from "./parser/parser";
@@ -57,21 +59,72 @@ async function main() {
     }
     const bundlerConfig: BundlerConfig = {
         ...bundlerConfigSpecResult.value,
-        concurrency,
+        // concurrency,
     };
 
     const { functions, hashes: existingHashes } = specResult.value;
     logger.info(`Discovered ${Object.keys(functions).length} functions`);
 
     const fxWithResolvedPaths = resolveFunctionPaths(functions, dir);
-    const bundleResult = await bundleFunctions(fxWithResolvedPaths, bundlerConfig);
-    if (bundleResult.isErr()) {
-        logger.error("Encountered an error while bundling functions", bundleResult.error);
-        return;
+    logger.log("fxWithResolvedPaths", fxWithResolvedPaths);
+
+    const bundleResult: { value: BundleResult[] } = { value: [] };
+    const project = new Project();
+    for (const [name, path] of Object.entries(functions)) {
+        project.addSourceFileAtPath(path);
+
+        logger.log(name, path);
+
+        const typeChecker = project.getTypeChecker();
+        const sourceFile = project.getSourceFileOrThrow(path);
+
+        const exportSymbols = typeChecker.getExportsOfModule(sourceFile.getSymbolOrThrow());
+        const names = exportSymbols.map((e) => e.getEscapedName());
+
+        const escapedFName = name.split("-").pop();
+
+        if (escapedFName && names.includes(escapedFName)) {
+            const index = names.indexOf(escapedFName);
+            names.splice(index, 1);
+            for (const n of names) {
+                const f = sourceFile.getVariableDeclaration(n);
+                if (f) {
+                    f.remove();
+                }
+            }
+        }
+
+        const [p, ext] = path.split(".");
+        const newFilePath = `${p}_[-]${name}[-].${ext}`;
+        await sourceFile.copyImmediately(newFilePath, { overwrite: true });
+        functions[name] = newFilePath;
+
+        logger.log(names);
+
+        project.removeSourceFile(sourceFile);
+
+        bundleResult.value.push(await bundleFunction(name, newFilePath, bundlerConfig));
+
+        // bundleSingleCodeFunction(name, path, bundlerConfig);
     }
 
+    // const bundleResult = await bundleFunctions(fxWithResolvedPaths, bundlerConfig);
+    // if (bundleResult.isErr()) {
+    //     logger.error("Encountered an error while bundling functions", bundleResult.error);
+    //     return;
+    // }
+    logger.log(bundleResult);
+
     const bundles = bundleResult.value;
-    const hashResults = bundles.map(({ fxName, code }) => calculateHash(fxName, code));
+    const hashResults = bundles.map(({ fxName, code }) => {
+        const file = "/Users/pedrosantos/Ajar/functions-differ/src/code/" + fxName + ".js";
+        try {
+            fs.mkdirSync(path.dirname(file));
+        } catch (error) {}
+        logger.info(file);
+        fs.writeFileSync(file, code, { flag: "w" });
+        return calculateHash(fxName, code);
+    });
     const [hashes, hashErrors] = segregate(hashResults);
 
     if (hashErrors.length != 0) {
@@ -117,5 +170,10 @@ async function main() {
 
     console.log(functionsToRedeploy);
 }
+
+export const kill = () => {
+    logger.info("KILLED PROCESS");
+    process.kill(process.pid, "SIGINT");
+};
 
 main();

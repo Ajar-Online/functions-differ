@@ -1,6 +1,7 @@
 import { relative } from "path";
 import { cwd } from "process";
 import { Project } from "ts-morph";
+import { kill } from "..";
 import logger from "../logger";
 
 /**
@@ -16,6 +17,9 @@ const getExports = (indexFilePath = "src/index.ts"): Record<string, string> => {
     const indexFile = project.getSourceFileOrThrow(indexFilePath);
 
     const exportSymbols = typeChecker.getExportsOfModule(indexFile.getSymbolOrThrow());
+    const firstExportedVariableStatement = exportSymbols.map((e) => e.getEscapedName());
+    logger.info(firstExportedVariableStatement);
+    kill();
     for (const exportSymbol of exportSymbols) {
         const exportName = exportSymbol.getName();
         const aliasedSymbol = exportSymbol.getAliasedSymbol();
@@ -30,6 +34,9 @@ const getExports = (indexFilePath = "src/index.ts"): Record<string, string> => {
         const filePath = declaration.getSourceFile().getFilePath();
 
         exports[exportName] = relative(cwd(), filePath);
+
+        logger.log(exportSymbol.getName(), exportSymbol.getAliasedSymbol(), filePath);
+        kill();
     }
 
     return exports;
