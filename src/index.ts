@@ -2,7 +2,6 @@
 
 import chalk from "chalk";
 import fs from "fs";
-import path from "path";
 import { Project } from "ts-morph";
 import { BundleResult } from "./bundler/bundleResult";
 import { bundleFunction, BundlerConfig } from "./bundler/esbuild";
@@ -13,7 +12,6 @@ import segregate from "./hasher/segregate";
 import logger from "./logger";
 import {
     bundlerConfigFilePath,
-    dir,
     discover,
     indexFilePath,
     prefix,
@@ -22,7 +20,7 @@ import {
     write,
 } from "./options/options";
 import DifferSpec from "./parser/differSpec";
-import parseSpecFile, { parseBundlerConfigFile, resolveFunctionPaths } from "./parser/parser";
+import parseSpecFile, { parseBundlerConfigFile } from "./parser/parser";
 import writeSpec from "./parser/writer";
 
 async function main() {
@@ -65,15 +63,12 @@ async function main() {
     const { functions, hashes: existingHashes } = specResult.value;
     logger.info(`Discovered ${Object.keys(functions).length} functions`);
 
-    const fxWithResolvedPaths = resolveFunctionPaths(functions, dir);
-    logger.log("fxWithResolvedPaths", fxWithResolvedPaths);
-
     const bundleResult: { value: BundleResult[] } = { value: [] };
     const project = new Project();
     for (const [name, path] of Object.entries(functions)) {
         project.addSourceFileAtPath(path);
 
-        logger.log(name, path);
+        logger.log("Building cloud function:", name, "Path:", path);
 
         const typeChecker = project.getTypeChecker();
         const sourceFile = project.getSourceFileOrThrow(path);
@@ -94,15 +89,19 @@ async function main() {
             }
         }
 
-        const [p, ext] = path.split(".");
+        const [p, ext] = path.split(/.(\w+)$/);
         const newFilePath = `${p}[-]${name}[-].${ext}`;
         await sourceFile.copyImmediately(newFilePath, { overwrite: true });
-
-        logger.log(names);
 
         project.removeSourceFile(sourceFile);
 
         bundleResult.value.push(await bundleFunction(name, newFilePath, bundlerConfig));
+
+        fs.unlink(newFilePath, (err) => {
+            if (err) {
+                logger.error(err);
+            }
+        });
     }
 
     // const bundleResult = await bundleFunctions(fxWithResolvedPaths, bundlerConfig);
@@ -110,16 +109,14 @@ async function main() {
     //     logger.error("Encountered an error while bundling functions", bundleResult.error);
     //     return;
     // }
-    logger.log(bundleResult);
 
     const bundles = bundleResult.value;
     const hashResults = bundles.map(({ fxName, code }) => {
-        const file = "/Users/pedrosantos/Ajar/functions-differ/src/code/" + fxName + ".js";
-        try {
-            fs.mkdirSync(path.dirname(file));
-        } catch (error) {}
-        logger.info(file);
-        fs.writeFileSync(file, code, { flag: "w" });
+        // const file = cwd() + "/code/" + fxName + ".js";
+        // try {
+        //     fs.mkdirSync(path.dirname(file));
+        // } catch (error) {}
+        // fs.writeFileSync(file, code, { flag: "w" });
         return calculateHash(fxName, code);
     });
     const [hashes, hashErrors] = segregate(hashResults);
