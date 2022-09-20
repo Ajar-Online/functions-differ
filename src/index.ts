@@ -2,6 +2,7 @@
 
 import chalk from "chalk";
 import fs from "fs";
+import path from "path";
 import { Project } from "ts-morph";
 import { BundleResult } from "./bundler/bundleResult";
 import { bundleFunction, BundlerConfig } from "./bundler/esbuild";
@@ -63,46 +64,7 @@ async function main() {
     const { functions, hashes: existingHashes } = specResult.value;
     logger.info(`Discovered ${Object.keys(functions).length} functions`);
 
-    const bundleResult: { value: BundleResult[] } = { value: [] };
-    const project = new Project();
-    for (const [name, path] of Object.entries(functions)) {
-        project.addSourceFileAtPath(path);
-
-        logger.log("Building cloud function:", name, "Path:", path);
-
-        const typeChecker = project.getTypeChecker();
-        const sourceFile = project.getSourceFileOrThrow(path);
-
-        const exportSymbols = typeChecker.getExportsOfModule(sourceFile.getSymbolOrThrow());
-        const names = exportSymbols.map((e) => e.getEscapedName());
-
-        const escapedFName = name.split("-").pop();
-
-        if (escapedFName && names.includes(escapedFName)) {
-            const index = names.indexOf(escapedFName);
-            names.splice(index, 1);
-            for (const n of names) {
-                const f = sourceFile.getVariableDeclaration(n);
-                if (f) {
-                    f.remove();
-                }
-            }
-        }
-
-        const [p, ext] = path.split(/.(\w+)$/);
-        const newFilePath = `${p}[-]${name}[-].${ext}`;
-        await sourceFile.copyImmediately(newFilePath, { overwrite: true });
-
-        project.removeSourceFile(sourceFile);
-
-        bundleResult.value.push(await bundleFunction(name, newFilePath, bundlerConfig));
-
-        fs.unlink(newFilePath, (err) => {
-            if (err) {
-                logger.error(err);
-            }
-        });
-    }
+    const bundleResult = await processCloudFunctionsBuild(functions, bundlerConfig);
 
     // const bundleResult = await bundleFunctions(fxWithResolvedPaths, bundlerConfig);
     // if (bundleResult.isErr()) {
@@ -168,6 +130,78 @@ async function main() {
 export const kill = () => {
     logger.info("KILLED PROCESS");
     process.kill(process.pid, "SIGINT");
+};
+
+const processCloudFunctionsBuild = async (
+    functions: Record<string, string>,
+    bundlerConfig: BundlerConfig,
+): Promise<{ value: BundleResult[] }> => {
+    const bundleResult: { value: BundleResult[] } = { value: [] };
+    const project = new Project();
+    const functionsKeys = Object.values(functions);
+
+    project.addSourceFilesAtPaths(functionsKeys);
+
+    // const symbolFn = project.getSourceFile(functionsKeys[0])!.getSymbol;
+    type sourceFileType = ReturnType<typeof project.getSourceFile>;
+    // type symbolType = ReturnType<typeof symbolFn>;
+    const sourceFiles: { [key: string]: sourceFileType } = {};
+
+    project.getSourceFiles().forEach((s) => (sourceFiles[s.getFilePath()] = s.getSourceFile()));
+
+    // const typeChecker = project.getTypeChecker();
+    const exportSymbolsCache: { [key: string]: any } = {};
+
+    for (const [name, filePath] of Object.entries(functions)) {
+        const absoluteFilePath = path.resolve(filePath);
+
+        logger.log("Processing cloud function:", name, "Path:", absoluteFilePath);
+
+        const sourceFile = sourceFiles[absoluteFilePath]!;
+
+        if (sourceFile == null) {
+            throw new Error("Source file not found: " + absoluteFilePath);
+        }
+
+        if (!exportSymbolsCache[absoluteFilePath]) {
+            exportSymbolsCache[absoluteFilePath] = sourceFile.getExportSymbols();
+        }
+
+        const exportSymbols = exportSymbolsCache[absoluteFilePath];
+        const names = exportSymbols.map((e: any) => e.getEscapedName());
+
+        const escapedFName = name.split("-").pop();
+
+        if (escapedFName && names.includes(escapedFName)) {
+            const index = names.indexOf(escapedFName);
+            names.splice(index, 1);
+
+            // remove all other functions from the file, except the one we want to compile
+            for (const n of names) {
+                const f = sourceFile.getVariableDeclaration(n);
+
+                if (f) {
+                    f.remove();
+                }
+            }
+        }
+
+        const [p, ext] = absoluteFilePath.split(/.(\w+)$/);
+        const newFilePath = `${p}[-]${name}[-].${ext}`;
+        await sourceFile.copyImmediately(newFilePath, { overwrite: true });
+
+        const result = await bundleFunction(name, newFilePath, bundlerConfig);
+
+        bundleResult.value.push(result);
+
+        fs.unlink(newFilePath, (err) => {
+            if (err) {
+                logger.error(err);
+            }
+        });
+    }
+
+    return bundleResult;
 };
 
 main();
