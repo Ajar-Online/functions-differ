@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 
 import chalk from "chalk";
-import { bundleFunctions } from "./bundler";
-import { BundlerConfig } from "./bundler/esbuild";
+import fs from "fs";
+import path from "path";
+import { Project } from "ts-morph";
+import { BundleResult } from "./bundler/bundleResult";
+import { bundleFunction, BundlerConfig } from "./bundler/esbuild";
 import hashesDiffer from "./differ/differ";
 import { getFirebaseFunctionsAndPaths } from "./discoverer/discoverer";
 import calculateHash from "./hasher/hasher";
@@ -10,22 +13,22 @@ import segregate from "./hasher/segregate";
 import logger from "./logger";
 import {
     bundlerConfigFilePath,
-    concurrency,
-    dir,
+    discover,
+    forceDeploy,
+    indexFilePath,
     prefix,
     separator,
     specFilePath,
     write,
-    discover,
-    indexFilePath,
 } from "./options/options";
 import DifferSpec from "./parser/differSpec";
-import parseSpecFile, { parseBundlerConfigFile, resolveFunctionPaths } from "./parser/parser";
+import parseSpecFile, { parseBundlerConfigFile } from "./parser/parser";
 import writeSpec from "./parser/writer";
 
 async function main() {
     logger.info(discover);
-    if (discover) {
+    // TODO discover disabled for now as it doesnt work as expected
+    if (discover && false) {
         logger.info(
             `Automatic function discover enabled. Trying to discover functions automatically. IndexFilePath: ${indexFilePath}`,
         );
@@ -57,21 +60,25 @@ async function main() {
     }
     const bundlerConfig: BundlerConfig = {
         ...bundlerConfigSpecResult.value,
-        concurrency,
+        // concurrency,
     };
 
     const { functions, hashes: existingHashes } = specResult.value;
     logger.info(`Discovered ${Object.keys(functions).length} functions`);
 
-    const fxWithResolvedPaths = resolveFunctionPaths(functions, dir);
-    const bundleResult = await bundleFunctions(fxWithResolvedPaths, bundlerConfig);
-    if (bundleResult.isErr()) {
-        logger.error("Encountered an error while bundling functions", bundleResult.error);
-        return;
-    }
+    const bundleResult = await processCloudFunctionsBuild(functions, bundlerConfig);
 
     const bundles = bundleResult.value;
-    const hashResults = bundles.map(({ fxName, code }) => calculateHash(fxName, code));
+    const hashResults = bundles.map(({ fxName, code }) => {
+        // debug builded files
+
+        // const file = cwd() + "/code/" + fxName + ".js";
+        // try {
+        //     fs.mkdirSync(path.dirname(file));
+        // } catch (error) {}
+        // fs.writeFileSync(file, code, { flag: "w" });
+        return calculateHash(fxName, code);
+    });
     const [hashes, hashErrors] = segregate(hashResults);
 
     if (hashErrors.length != 0) {
@@ -87,7 +94,7 @@ async function main() {
             return record;
         }, <Record<string, string>>{});
 
-    const diffResults = hashesDiffer(existingHashes ?? {}, newHashes);
+    const diffResults = hashesDiffer((forceDeploy ? {} : existingHashes) ?? {}, newHashes);
 
     const updatedSpec: DifferSpec = {
         functions,
@@ -117,5 +124,82 @@ async function main() {
 
     console.log(functionsToRedeploy);
 }
+
+export const kill = () => {
+    logger.info("KILLED PROCESS");
+    process.kill(process.pid, "SIGINT");
+};
+
+const processCloudFunctionsBuild = async (
+    functions: Record<string, string>,
+    bundlerConfig: BundlerConfig,
+): Promise<{ value: BundleResult[] }> => {
+    const bundleResult: { value: BundleResult[] } = { value: [] };
+    const project = new Project();
+    const functionsKeys = Object.values(functions);
+
+    project.addSourceFilesAtPaths(functionsKeys);
+
+    type sourceFileType = ReturnType<typeof project.getSourceFile>;
+    const sourceFilesCache: { [key: string]: sourceFileType } = {};
+
+    project.getSourceFiles().forEach((s) => (sourceFilesCache[s.getFilePath()] = s.getSourceFile()));
+
+    const exportSymbolsCache: { [key: string]: any } = {};
+
+    for (const [name, filePath] of Object.entries(functions)) {
+        const absoluteFilePath = path.resolve(filePath);
+
+        logger.log("Processing cloud function:", name, "Path:", absoluteFilePath);
+
+        const sourceFile = sourceFilesCache[absoluteFilePath]!;
+
+        if (sourceFile == null) {
+            throw new Error("Source file not found: " + absoluteFilePath);
+        }
+
+        if (!exportSymbolsCache[absoluteFilePath]) {
+            exportSymbolsCache[absoluteFilePath] = sourceFile.getExportSymbols();
+        }
+
+        const exportSymbols = exportSymbolsCache[absoluteFilePath];
+        const names = exportSymbols.map((e: any) => e.getEscapedName());
+
+        const escapedFName = name.split("-").pop();
+
+        if (escapedFName && names.includes(escapedFName)) {
+            const index = names.indexOf(escapedFName);
+            names.splice(index, 1);
+
+            // remove all other cloud functions from the file, except the one we want to compile
+            for (const n of names) {
+                const f = sourceFile.getVariableDeclaration(n);
+
+                if (f) {
+                    f.remove();
+                }
+            }
+        }
+
+        const [p, ext] = absoluteFilePath.split(/.(\w+)$/);
+        const newFilePath = `${p}[-]${name}[-].${ext}`;
+
+        // save single cloud function in a file (with other cloud functions removed)
+        await sourceFile.copyImmediately(newFilePath, { overwrite: true });
+
+        // build file
+        const result = await bundleFunction(name, newFilePath, bundlerConfig);
+
+        bundleResult.value.push(result);
+
+        fs.unlink(newFilePath, (err) => {
+            if (err) {
+                logger.error(err);
+            }
+        });
+    }
+
+    return bundleResult;
+};
 
 main();

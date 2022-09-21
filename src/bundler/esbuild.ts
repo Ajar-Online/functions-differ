@@ -1,8 +1,19 @@
 import { PromisePool } from "@supercharge/promise-pool";
 import { build, BuildOptions } from "esbuild";
+import { Dirent } from "fs";
+import { readdir } from "fs/promises";
 import { err, ok, Result } from "neverthrow";
 import logger from "../logger";
 import { BundleResult } from "./bundleResult";
+
+let nodeModulesExclusionList: string[];
+const includeModules = ["@ajar-online"];
+
+(async () => {
+    nodeModulesExclusionList = (await readdir("./node_modules/", { withFileTypes: true }))
+        .filter((dir: Dirent) => dir.isDirectory() && includeModules.includes(dir.name) == false)
+        .map((dir: Dirent) => `./node_modules/${dir.name}/*`);
+})();
 
 export type BundlerConfig = BuildOptions & {
     concurrency?: number;
@@ -29,6 +40,7 @@ export async function bundleFunction(
     bundlerConfig?: BuildOptions,
 ): Promise<BundleResult> {
     const timeLabel = `Bundle ${fxName}`;
+
     logger.time(timeLabel);
 
     const buildResult = await build({
@@ -41,6 +53,7 @@ export async function bundleFunction(
         outdir: "bundled",
         ...bundlerConfig,
         write: false,
+        external: [...nodeModulesExclusionList],
     });
 
     logger.timeEnd(timeLabel);

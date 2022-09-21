@@ -12,10 +12,11 @@ export const options: OptionDefinition[] = [
     { name: "discover", type: Boolean, defaultValue: true },
     { name: "no-discover", type: Boolean },
     { name: "indexFilePath", type: String, defaultValue: undefined },
+    { name: "forceDeploy", type: Boolean, defaultValue: true },
 ];
 
 const args = cmdArgs(options, { partial: true });
-const { dir, write, verbose, prefix, sep: separator, bundlerConfig, concurrency, indexFilePath } = args;
+const { dir, write, verbose, prefix, sep: separator, bundlerConfig, concurrency, indexFilePath, forceDeploy } = args;
 const discover = args.discover && !args["no-discover"];
 
 if (!dir) {
@@ -37,4 +38,5 @@ export {
     concurrency,
     discover,
     indexFilePath,
+    forceDeploy,
 };
