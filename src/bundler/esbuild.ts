@@ -7,10 +7,11 @@ import logger from "../logger";
 import { BundleResult } from "./bundleResult";
 
 let nodeModulesExclusionList: string[];
+const includeModules = ["@ajar-online"];
 
 (async () => {
     nodeModulesExclusionList = (await readdir("./node_modules/", { withFileTypes: true }))
-        .filter((dir: Dirent) => dir.isDirectory() && dir.name !== "@ajar-online")
+        .filter((dir: Dirent) => dir.isDirectory() && includeModules.includes(dir.name) == false)
         .map((dir: Dirent) => `./node_modules/${dir.name}/*`);
 })();
 
