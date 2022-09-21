@@ -7,7 +7,6 @@ import { Project } from "ts-morph";
 import { BundleResult } from "./bundler/bundleResult";
 import { bundleFunction, BundlerConfig } from "./bundler/esbuild";
 import hashesDiffer from "./differ/differ";
-import { getFirebaseFunctionsAndPaths } from "./discoverer/discoverer";
 import calculateHash from "./hasher/hasher";
 import segregate from "./hasher/segregate";
 import logger from "./logger";
@@ -15,7 +14,6 @@ import {
     bundlerConfigFilePath,
     discover,
     forceDeploy,
-    indexFilePath,
     prefix,
     separator,
     specFilePath,
@@ -28,24 +26,24 @@ import writeSpec from "./parser/writer";
 async function main() {
     logger.info(discover);
     // TODO discover disabled for now as it doesnt work as expected
-    if (discover && false) {
-        logger.info(
-            `Automatic function discover enabled. Trying to discover functions automatically. IndexFilePath: ${indexFilePath}`,
-        );
-        const functionsPath = getFirebaseFunctionsAndPaths(indexFilePath ?? undefined);
-        logger.info(`Discovered ${Object.keys(functionsPath).length} functions`);
-        logger.info(`Writing spec file`);
-        const specResult = await parseSpecFile(specFilePath);
+    // if (discover && false) {
+    //     logger.info(
+    //         `Automatic function discover enabled. Trying to discover functions automatically. IndexFilePath: ${indexFilePath}`,
+    //     );
+    //     const functionsPath = getFirebaseFunctionsAndPaths(indexFilePath ?? undefined);
+    //     logger.info(`Discovered ${Object.keys(functionsPath).length} functions`);
+    //     logger.info(`Writing spec file`);
+    //     const specResult = await parseSpecFile(specFilePath);
 
-        if (specResult.isErr()) {
-            logger.info("Spec file not found or invalid. Writing spec file");
-            await writeSpec({ functions: { ...functionsPath } }, specFilePath);
-        } else {
-            const spec = specResult.value;
-            spec.functions = functionsPath;
-            await writeSpec(spec, specFilePath);
-        }
-    }
+    //     if (specResult.isErr()) {
+    //         logger.info("Spec file not found or invalid. Writing spec file");
+    //         await writeSpec({ functions: { ...functionsPath } }, specFilePath);
+    //     } else {
+    //         const spec = specResult.value;
+    //         spec.functions = functionsPath;
+    //         await writeSpec(spec, specFilePath);
+    //     }
+    // }
     logger.info(`Parsing ${specFilePath}`);
     const specResult = await parseSpecFile(specFilePath);
     if (specResult.isErr()) {
@@ -153,10 +151,6 @@ const processCloudFunctionsBuild = async (
         logger.log("Processing cloud function:", name, "Path:", absoluteFilePath);
 
         const sourceFile = sourceFilesCache[absoluteFilePath]!;
-
-        if (sourceFile == null) {
-            throw new Error("Source file not found: " + absoluteFilePath);
-        }
 
         if (!exportSymbolsCache[absoluteFilePath]) {
             exportSymbolsCache[absoluteFilePath] = sourceFile.getExportSymbols();
