@@ -1,3 +1,7 @@
+This moded version allows one file to have multiple cloud functions, and only deploys the single function that had changes.
+It does this by removing all the other cloud functions from the file and only compiling that single cloud function to check if there were changes made.
+---
+
 # functions-differ
 
 [![Build and test](https://github.com/haroldadmin/functions-differ/actions/workflows/build-test.yml/badge.svg)](https://github.com/haroldadmin/functions-differ/actions/workflows/build-test.yml)
