@@ -27,7 +27,8 @@ import writeSpec from "./parser/writer";
 
 async function main() {
     logger.info(discover);
-    if (discover) {
+    // TODO discover disabled for now as it doesnt work as expected
+    if (discover && false) {
         logger.info(
             `Automatic function discover enabled. Trying to discover functions automatically. IndexFilePath: ${indexFilePath}`,
         );
@@ -67,14 +68,10 @@ async function main() {
 
     const bundleResult = await processCloudFunctionsBuild(functions, bundlerConfig);
 
-    // const bundleResult = await bundleFunctions(fxWithResolvedPaths, bundlerConfig);
-    // if (bundleResult.isErr()) {
-    //     logger.error("Encountered an error while bundling functions", bundleResult.error);
-    //     return;
-    // }
-
     const bundles = bundleResult.value;
     const hashResults = bundles.map(({ fxName, code }) => {
+        // debug builded files
+
         // const file = cwd() + "/code/" + fxName + ".js";
         // try {
         //     fs.mkdirSync(path.dirname(file));
@@ -143,14 +140,11 @@ const processCloudFunctionsBuild = async (
 
     project.addSourceFilesAtPaths(functionsKeys);
 
-    // const symbolFn = project.getSourceFile(functionsKeys[0])!.getSymbol;
     type sourceFileType = ReturnType<typeof project.getSourceFile>;
-    // type symbolType = ReturnType<typeof symbolFn>;
-    const sourceFiles: { [key: string]: sourceFileType } = {};
+    const sourceFilesCache: { [key: string]: sourceFileType } = {};
 
-    project.getSourceFiles().forEach((s) => (sourceFiles[s.getFilePath()] = s.getSourceFile()));
+    project.getSourceFiles().forEach((s) => (sourceFilesCache[s.getFilePath()] = s.getSourceFile()));
 
-    // const typeChecker = project.getTypeChecker();
     const exportSymbolsCache: { [key: string]: any } = {};
 
     for (const [name, filePath] of Object.entries(functions)) {
@@ -158,7 +152,7 @@ const processCloudFunctionsBuild = async (
 
         logger.log("Processing cloud function:", name, "Path:", absoluteFilePath);
 
-        const sourceFile = sourceFiles[absoluteFilePath]!;
+        const sourceFile = sourceFilesCache[absoluteFilePath]!;
 
         if (sourceFile == null) {
             throw new Error("Source file not found: " + absoluteFilePath);
@@ -177,7 +171,7 @@ const processCloudFunctionsBuild = async (
             const index = names.indexOf(escapedFName);
             names.splice(index, 1);
 
-            // remove all other functions from the file, except the one we want to compile
+            // remove all other cloud functions from the file, except the one we want to compile
             for (const n of names) {
                 const f = sourceFile.getVariableDeclaration(n);
 
@@ -189,8 +183,11 @@ const processCloudFunctionsBuild = async (
 
         const [p, ext] = absoluteFilePath.split(/.(\w+)$/);
         const newFilePath = `${p}[-]${name}[-].${ext}`;
+
+        // save single cloud function in a file (with other cloud functions removed)
         await sourceFile.copyImmediately(newFilePath, { overwrite: true });
 
+        // build file
         const result = await bundleFunction(name, newFilePath, bundlerConfig);
 
         bundleResult.value.push(result);
