@@ -1,37 +1,80 @@
 name: Build and publish
 
 on:
-    workflow_dispatch:
-    push:
-        tags:
-            - "*"
+  workflow_dispatch:
+  push:
+    tags:
+      - "*"
 
 jobs:
-    publish:
-        runs-on: ubuntu-latest
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+    steps:
+      - name: Checkout latest code
+        uses: actions/checkout@v1
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v2
+        with:
+            node-version: "16"
+
+      - name: Download dependencies
+        run: npm install
+
+      # - name: Run lint
+      #   run: npm run lint
+
+      - name: Compile Typescript
+        run: npm run build
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Publish
+        run: npm publish
         env:
-            NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-        steps:
-            - name: Checkout latest code
-              uses: actions/checkout@v1
+      - id: version
+        run: echo "::set-output name=version::$(echo $(npm view @ajar-online/functions-differ version))"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Setup NodeJS
-              uses: actions/setup-node@v2
-              with:
-                  node-version: "16"
+      - if: ${{ success() }}
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          MSG_MINIMAL: true
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_FOOTER: ${{ steps.version.outputs.version }}
+          SLACK_ICON: https://emojis.slackmojis.com/emojis/images/1556810896/5673/octopus_deploy.png
+          SLACK_MESSAGE: Release Completed
+          SLACK_TITLE: "@ajar-online/functions-differ"
+          SLACK_USERNAME: GitHub
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
 
-            - name: Download dependencies
-              run: npm install
+      - if: ${{ failure() }}
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          MSG_MINIMAL: true
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_FOOTER: ""
+          SLACK_ICON: https://emojis.slackmojis.com/emojis/images/1556810896/5673/octopus_deploy.png
+          SLACK_MESSAGE: Release Failed
+          SLACK_TITLE: "@ajar-online/functions-differ"
+          SLACK_USERNAME: GitHub
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
 
-            # - name: Run lint
-            #   run: npm run lint
-
-            - name: Compile Typescript
-              run: npm run build
-
-            - name: Run tests
-              run: npm run test
-
-            - name: Publish
-              run: npm publish
+      - if: ${{ cancelled() }}
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          MSG_MINIMAL: true
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_FOOTER: ""
+          SLACK_ICON: https://emojis.slackmojis.com/emojis/images/1556810896/5673/octopus_deploy.png
+          SLACK_MESSAGE: Release Canceled
+          SLACK_TITLE: "@ajar-online/functions-differ"
+          SLACK_USERNAME: GitHub
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
