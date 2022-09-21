@@ -14,6 +14,7 @@ import logger from "./logger";
 import {
     bundlerConfigFilePath,
     discover,
+    forceDeploy,
     indexFilePath,
     prefix,
     separator,
@@ -96,7 +97,7 @@ async function main() {
             return record;
         }, <Record<string, string>>{});
 
-    const diffResults = hashesDiffer(existingHashes ?? {}, newHashes);
+    const diffResults = hashesDiffer((forceDeploy ? {} : existingHashes) ?? {}, newHashes);
 
     const updatedSpec: DifferSpec = {
         functions,
