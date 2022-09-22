@@ -11,7 +11,13 @@ export interface DifferSpecLock {
 
 export class ParseError extends Error {
     constructor(
-        readonly type: "file-not-found" | "file-read-failed" | "invalid-json" | "missing-functions" | "unknown",
+        readonly type:
+            | "file-not-found"
+            | "file-read-failed"
+            | "invalid-json"
+            | "missing-functions"
+            | "unknown"
+            | "missing-hashes",
         readonly message: string,
     ) {
         super(message);

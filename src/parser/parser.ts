@@ -89,7 +89,7 @@ function parseSpecLockContents(spec: string): Result<DifferSpecLock, ParseError>
     try {
         const parsedSpec = JSON.parse(spec);
         if (!parsedSpec.hashes) {
-            return err(new ParseError("missing-functions", "No `hashes` object found in spec file"));
+            return err(new ParseError("missing-hashes", "No `hashes` object found in spec file"));
         }
 
         return ok(parsedSpec);

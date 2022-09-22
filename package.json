@@ -25,6 +25,7 @@
         "compile-start": "ts-node src/index.ts",
         "compile-start-test": "ts-node src/index.ts -v --dir /Users/pedrosantos/Ajar/ajar-firebase/server",
         "test": "mocha 'lib/**/*.spec.js'",
+        "build-test": "npm run build && npm run test",
         "lint": "eslint 'src/**/*.{js,ts}'"
     },
     "author": "Kshitij Chauhan",
