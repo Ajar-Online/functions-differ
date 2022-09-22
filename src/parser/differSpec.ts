@@ -1,7 +1,10 @@
 import { DiffResult } from "../differ/differ";
 
-export default interface DifferSpec {
+export interface DifferSpec {
     functions: Record<string, string>;
+}
+
+export interface DifferSpecLock {
     hashes?: Record<string, string>;
     lastDiff?: DiffResult;
 }

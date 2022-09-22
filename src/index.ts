@@ -12,16 +12,18 @@ import segregate from "./hasher/segregate";
 import logger from "./logger";
 import {
     bundlerConfigFilePath,
+    dir,
     discover,
     forceDeploy,
     prefix,
     separator,
     specFilePath,
+    specLockFilePath,
     write,
 } from "./options/options";
-import DifferSpec from "./parser/differSpec";
-import parseSpecFile, { parseBundlerConfigFile } from "./parser/parser";
-import writeSpec from "./parser/writer";
+import { DifferSpecLock } from "./parser/differSpec";
+import { parseBundlerConfigFile, parseSpecFile, parseSpecLockFile } from "./parser/parser";
+import { writeSpecLock } from "./parser/writer";
 
 async function main() {
     logger.info(discover);
@@ -51,6 +53,13 @@ async function main() {
         return;
     }
 
+    logger.info(`Parsing ${specLockFilePath}`);
+    const specLockResult = await parseSpecLockFile(specLockFilePath);
+    if (specLockResult.isErr()) {
+        logger.error(specLockResult.error);
+        return;
+    }
+
     const bundlerConfigSpecResult = await parseBundlerConfigFile(bundlerConfigFilePath);
     if (bundlerConfigSpecResult.isErr()) {
         logger.error(bundlerConfigSpecResult.error);
@@ -61,7 +70,8 @@ async function main() {
         // concurrency,
     };
 
-    const { functions, hashes: existingHashes } = specResult.value;
+    const { functions } = specResult.value;
+    let { hashes: existingHashes } = specLockResult.value;
     logger.info(`Discovered ${Object.keys(functions).length} functions`);
 
     const bundleResult = await processCloudFunctionsBuild(functions, bundlerConfig);
@@ -92,10 +102,10 @@ async function main() {
             return record;
         }, <Record<string, string>>{});
 
-    const diffResults = hashesDiffer((forceDeploy ? {} : existingHashes) ?? {}, newHashes);
+    existingHashes = forceDeploy ? {} : existingHashes;
+    const diffResults = hashesDiffer(existingHashes ?? {}, newHashes);
 
-    const updatedSpec: DifferSpec = {
-        functions,
+    const updatedSpecLock: DifferSpecLock = {
         hashes: newHashes,
         lastDiff: diffResults,
     };
@@ -108,11 +118,18 @@ async function main() {
         logger.info(`${chalk.yellow(diffComponent)}: ${chalk.green(componentResults)}`);
     });
 
+    // write .differspec.json and .differspec.lock.json
     if (write) {
-        const writeResult = await writeSpec(updatedSpec, specFilePath);
-        if (writeResult.isErr()) {
-            const error = writeResult.error;
-            logger.error("Failed to update .differspec.json", error);
+        // const writeResult = await writeSpec(updatedSpec, specFilePath);
+        // if (writeResult.isErr()) {
+        //     const error = writeResult.error;
+        //     logger.error("Failed to update .differspec.json", error);
+        // }
+
+        const writeLockResult = await writeSpecLock(updatedSpecLock, specLockFilePath);
+        if (writeLockResult.isErr()) {
+            const error = writeLockResult.error;
+            logger.error("Failed to update .differspec.lock.json", error);
         }
     }
 
@@ -132,11 +149,17 @@ const processCloudFunctionsBuild = async (
     functions: Record<string, string>,
     bundlerConfig: BundlerConfig,
 ): Promise<{ value: BundleResult[] }> => {
+    logger.info("Starting processing");
+
     const bundleResult: { value: BundleResult[] } = { value: [] };
     const project = new Project();
-    const functionsKeys = Object.values(functions);
 
-    project.addSourceFilesAtPaths(functionsKeys);
+    // resolve paths
+    Object.entries(functions).forEach(([funcName, funcPath]) => {
+        functions[funcName] = path.isAbsolute(funcPath) ? funcPath : path.resolve(dir ?? "", funcPath);
+    });
+
+    project.addSourceFilesAtPaths(Object.values(functions));
 
     type sourceFileType = ReturnType<typeof project.getSourceFile>;
     const sourceFilesCache: { [key: string]: sourceFileType } = {};
@@ -146,17 +169,15 @@ const processCloudFunctionsBuild = async (
     const exportSymbolsCache: { [key: string]: any } = {};
 
     for (const [name, filePath] of Object.entries(functions)) {
-        const absoluteFilePath = path.resolve(filePath);
+        logger.info("Processing cloud function:", name, "Path:", filePath);
 
-        logger.log("Processing cloud function:", name, "Path:", absoluteFilePath);
+        const sourceFile = sourceFilesCache[filePath]!;
 
-        const sourceFile = sourceFilesCache[absoluteFilePath]!;
-
-        if (!exportSymbolsCache[absoluteFilePath]) {
-            exportSymbolsCache[absoluteFilePath] = sourceFile.getExportSymbols();
+        if (!exportSymbolsCache[filePath]) {
+            exportSymbolsCache[filePath] = sourceFile.getExportSymbols();
         }
 
-        const exportSymbols = exportSymbolsCache[absoluteFilePath];
+        const exportSymbols = exportSymbolsCache[filePath];
         const names = exportSymbols.map((e: any) => e.getEscapedName());
 
         const escapedFName = name.split("-").pop();
@@ -175,7 +196,7 @@ const processCloudFunctionsBuild = async (
             }
         }
 
-        const [p, ext] = absoluteFilePath.split(/.(\w+)$/);
+        const [p, ext] = filePath.split(/.(\w+)$/);
         const newFilePath = `${p}[-]${name}[-].${ext}`;
 
         // save single cloud function in a file (with other cloud functions removed)

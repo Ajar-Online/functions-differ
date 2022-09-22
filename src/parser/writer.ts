@@ -1,10 +1,20 @@
-import { err, ok, Result } from "neverthrow";
 import { promises as fs } from "fs";
-import DifferSpec from "./differSpec";
+import { err, ok, Result } from "neverthrow";
+import { DifferSpec, DifferSpecLock } from "./differSpec";
 import prettify from "./prettify";
 
-export default async function writeSpec(
-    spec: DifferSpec,
+export async function writeSpec(spec: DifferSpec, path: string, jsonSpacing = 2): Promise<Result<string, WriteError>> {
+    try {
+        const contents = prettify(spec, jsonSpacing);
+        await fs.writeFile(path, contents);
+        return ok(contents);
+    } catch (error) {
+        return err(new WriteError(`Failed to write spec file: ${error}`));
+    }
+}
+
+export async function writeSpecLock(
+    spec: DifferSpecLock,
     path: string,
     jsonSpacing = 2,
 ): Promise<Result<string, WriteError>> {

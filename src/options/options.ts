@@ -12,7 +12,7 @@ export const options: OptionDefinition[] = [
     { name: "discover", type: Boolean, defaultValue: true },
     { name: "no-discover", type: Boolean },
     { name: "indexFilePath", type: String, defaultValue: undefined },
-    { name: "forceDeploy", type: Boolean, defaultValue: true },
+    { name: "forceDeploy", type: Boolean, defaultValue: false },
 ];
 
 const args = cmdArgs(options, { partial: true });
@@ -25,10 +25,12 @@ if (!dir) {
 }
 
 const specFilePath: string = path.join(dir, ".differspec.json");
+const specLockFilePath: string = path.join(dir, ".differspec.lock.json");
 const bundlerConfigFilePath: string = bundlerConfig ? path.join(dir, bundlerConfig) : "";
 
 export {
     specFilePath,
+    specLockFilePath,
     dir,
     write,
     verbose,
