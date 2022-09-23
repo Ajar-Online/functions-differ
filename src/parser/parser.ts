@@ -30,11 +30,8 @@ export async function parseSpecLockFile(specFilePath: string): Promise<Result<Di
 
     const specContents = specContentsResult.isErr() ? JSON.stringify({ hashes: {} }) : specContentsResult.value;
     const differSpecLockResult = parseSpecLockContents(specContents);
-    if (differSpecLockResult.isErr()) {
-        return err(differSpecLockResult.error);
-    }
-
-    const differLockSpec = differSpecLockResult.value;
+    const differLockSpec = differSpecLockResult.isErr() ? { hashes: {} } : differSpecLockResult.value;
+    
     return ok(differLockSpec);
 }
 

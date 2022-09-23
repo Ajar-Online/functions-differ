@@ -50,25 +50,15 @@ describe("spec file parser", () => {
 });
 
 describe("spec lock file parser", () => {
-    it("should return error if parsed file is not JSON", async () => {
+    it("should return success if differspeclock doesnt exist", async () => {
         const [specLockFile, cleanup] = await createTempFile();
-        const parseResult = await parseSpecLockFile(specLockFile);
-
-        expect(parseResult.isErr()).to.be.true;
-        expect(parseResult._unsafeUnwrapErr().type).to.equal("invalid-json");
-
-        await cleanup();
-    });
-
-    it("should return error if differspec is missing functions property", async () => {
-        const [specLockFile, cleanup] = await createTempFile();
-        const invalidSpec = {};
+        const invalidSpec = "";
         await fs.writeFile(specLockFile, JSON.stringify(invalidSpec));
 
         const parseResult = await parseSpecLockFile(specLockFile);
 
-        expect(parseResult.isErr()).to.be.true;
-        expect(parseResult._unsafeUnwrapErr().type).to.equal("missing-hashes");
+        expect(parseResult.isOk()).to.be.true;
+        expect(parseResult._unsafeUnwrap()).to.deep.equal({ hashes: {} });
 
         await cleanup();
     });

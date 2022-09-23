@@ -28,6 +28,11 @@ const specFilePath: string = path.join(dir, ".differspec.json");
 const specLockFilePath: string = path.join(dir, ".differspec.lock.json");
 const bundlerConfigFilePath: string = bundlerConfig ? path.join(dir, bundlerConfig) : "";
 
+console.info("Arguments:");
+Object.entries(args as { [key: string]: any }).map(([key, value]) => {
+    console.log(`${key} = '${JSON.stringify(value)}'`);
+});
+
 export {
     specFilePath,
     specLockFilePath,
